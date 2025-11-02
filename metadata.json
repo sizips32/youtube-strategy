@@ -1,0 +1,5 @@
+{
+  "name": "유튜브 전략 컨설턴트",
+  "description": "YouTube 채널 및 해시태그를 분석하고, Gemini AI를 통해 데이터 기반의 채널 성장 전략을 제안받는 애플리케이션입니다.",
+  "requestFramePermissions": []
+}
