@@ -1,0 +1,18 @@
+[project]
+name = "youtube-strategy-mcp"
+version = "1.0.0"
+description = "MCP server for YouTube channel and keyword analysis"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "fastmcp>=2.0.0",
+    "httpx>=0.27.0",
+    "pydantic>=2.0.0",
+]
+
+[project.scripts]
+youtube-strategy-mcp = "youtube_strategy_mcp:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

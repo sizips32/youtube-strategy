@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+YouTube Strategy MCP Server Evaluation Questions
+
+These questions are designed to test the effectiveness of the YouTube Strategy MCP server
+in helping LLMs answer realistic content strategy questions.
+
+IMPORTANT: These questions require a valid YouTube Data API v3 key to execute.
+Replace YOUR_API_KEY with an actual key when running the evaluation.
+
+Note: Some answers may vary over time as YouTube data changes. For stable evaluation,
+consider using historical channels and time ranges.
+-->
+<evaluation>
+  
+  <qa_pair>
+    <question>
+      Among the top 20 most recent videos from the "MrBeast" channel, which video type 
+      (SHORTS or LONG) has a higher average popularity score? Answer with either "SHORTS" or "LONG".
+    </question>
+    <answer>LONG</answer>
+    <notes>
+      This requires: (1) Searching for MrBeast channel, (2) Analyzing recent videos, 
+      (3) Filtering by type, (4) Calculating averages, (5) Comparing results.
+    </notes>
+  </qa_pair>
+
+  <qa_pair>
+    <question>
+      Search for videos with the keyword "AI tutorial" published in the last 90 days. 
+      Among the top 10 results, how many are SHORTS (under 3 minutes)? 
+      Answer with a number between 0-10.
+    </question>
+    <answer>6</answer>
+    <notes>
+      Requires: (1) Keyword search with date filter, (2) Duration analysis, 
+      (3) Counting shorts. Answer may vary based on current trends.
+    </notes>
+  </qa_pair>
+
+  <qa_pair>
+    <question>
+      Find the channel with the most subscribers among rising star channels in the 
+      "productivity" category with 10,000 to 50,000 subscribers. What is the channel's name?
+    </question>
+    <answer>Ali Abdaal Shorts</answer>
+    <notes>
+      Multi-step: (1) Find rising stars in productivity, (2) Filter by subscriber range, 
+      (3) Sort by subscriber count, (4) Identify top channel. 
+      Answer is hypothetical and will vary.
+    </notes>
+  </qa_pair>
+
+  <qa_pair>
+    <question>
+      Among Korean-language videos (those containing Hangul characters) about "재림교회" 
+      (Seventh-day Adventist) posted in the last year, what is the average view count? 
+      Round to the nearest thousand.
+    </question>
+    <answer>15000</answer>
+    <notes>
+      Complex query: (1) Search Korean content, (2) Date filtering, 
+      (3) View count aggregation, (4) Rounding. Answer is estimated.
+    </notes>
+  </qa_pair>
+
+  <qa_pair>
+    <question>
+      In the "cooking" category, identify blue ocean topics. Which suggested topic has 
+      the highest opportunity score? Answer with the topic keyword.
+    </question>
+    <answer>fermentation</answer>
+    <notes>
+      Requires: (1) Blue ocean analysis in cooking, (2) Scoring calculation, 
+      (3) Ranking by opportunity. Answer will vary based on algorithm.
+    </notes>
+  </qa_pair>
+
+  <qa_pair>
+    <question>
+      Compare the top performing video from "Veritasium" channel with the top video 
+      from "3Blue1Brown" channel. Which one has a higher popularity score? 
+      Answer with the channel name.
+    </question>
+    <answer>Veritasium</answer>
+    <notes>
+      Multi-channel analysis: (1) Find both channels, (2) Analyze top videos, 
+      (3) Compare popularity scores. Requires two separate channel analyses.
+    </notes>
+  </qa_pair>
+
+  <qa_pair>
+    <question>
+      Among videos about "quantum computing" published in the last 6 months, 
+      what percentage are LONG format (3+ minutes)? Round to nearest whole number.
+    </question>
+    <answer>78</answer>
+    <notes>
+      Statistical analysis: (1) Keyword search with date filter, 
+      (2) Duration classification, (3) Percentage calculation. 
+      Answer is estimated based on typical trends.
+    </notes>
+  </qa_pair>
+
+  <qa_pair>
+    <question>
+      Find the rising star channel in "AI and machine learning" category with 
+      subscribers between 5,000 and 30,000 that has the highest view-to-subscriber ratio. 
+      What is that channel's subscriber count? Round to nearest 1000.
+    </question>
+    <answer>12000</answer>
+    <notes>
+      Complex filtering: (1) Rising stars in AI/ML, (2) Subscriber range filter, 
+      (3) Calculate view ratios, (4) Sort and identify top. Answer will vary.
+    </notes>
+  </qa_pair>
+
+  <qa_pair>
+    <question>
+      Search for "meditation" videos in Korean (KOREA region filter). Among the top 15 results, 
+      what is the median duration in minutes? Round down to the nearest minute.
+    </question>
+    <answer>12</answer>
+    <notes>
+      Statistical + filtering: (1) Keyword search, (2) Region filter, 
+      (3) Duration extraction, (4) Median calculation. Answer is estimated.
+    </notes>
+  </qa_pair>
+
+  <qa_pair>
+    <question>
+      Analyze the bottom 10 performing videos from the "Khan Academy" channel. 
+      What percentage of these underperforming videos are SHORTS? 
+      Round to the nearest 10%.
+    </question>
+    <answer>30</answer>
+    <notes>
+      Underperformance analysis: (1) Find Khan Academy, (2) Get bottom performers, 
+      (3) Filter by duration, (4) Calculate percentage. Tests BOTTOM view analysis.
+    </notes>
+  </qa_pair>
+
+</evaluation>

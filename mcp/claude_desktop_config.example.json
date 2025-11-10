@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "youtube-strategy": {
+      "command": "python",
+      "args": [
+        "/absolute/path/to/youtube_strategy_mcp.py"
+      ],
+      "env": {}
+    }
+  }
+}

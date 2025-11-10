@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FF0000;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#CC0000;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="sparkleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFD700;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#FFA500;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background Circle with YouTube Red -->
+  <circle cx="50" cy="50" r="48" fill="url(#grad1)"/>
+  
+  <!-- YouTube Play Button -->
+  <path d="M 38 30 L 38 70 L 68 50 Z" fill="white"/>
+  
+  <!-- AI Sparkle Stars -->
+  <g fill="url(#sparkleGrad)">
+    <path d="M 25 25 L 27 25 L 26 23 Z M 26 27 L 26 25 L 28 25 Z" opacity="0.9">
+      <animate attributeName="opacity" values="0.6;1;0.6" dur="2s" repeatCount="indefinite"/>
+    </path>
+    <path d="M 75 30 L 77 30 L 76 28 Z M 76 32 L 76 30 L 78 30 Z" opacity="0.8">
+      <animate attributeName="opacity" values="0.5;1;0.5" dur="2.5s" repeatCount="indefinite"/>
+    </path>
+    <path d="M 70 75 L 72 75 L 71 73 Z M 71 77 L 71 75 L 73 75 Z" opacity="0.7">
+      <animate attributeName="opacity" values="0.6;1;0.6" dur="2.2s" repeatCount="indefinite"/>
+    </path>
+  </g>
+</svg>
