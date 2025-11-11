@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { AnalysisResult, ChannelAnalysisView, VideoData } from '../types';
+import { AnalysisResult, ChannelAnalysisView, VideoData, ShortsData } from '../types';
 
 const getTopVideosPrompt = (analysisResult: AnalysisResult, query: string) => `
 당신은 대한민국 최고의 유튜브 채널 성장 전략 컨설턴트입니다.
@@ -364,5 +364,95 @@ ${video.description ? `- 설명: ${video.description.substring(0, 500)}` : ''}
   } catch (error: any) {
     console.error("Error generating video summary:", error);
     throw new Error(error?.message || "영상 요약 생성 중 오류가 발생했습니다.");
+  }
+};
+
+// 쇼츠 개선 제안 생성
+export const generateShortsAdvice = async (short: ShortsData, channelInfo?: any): Promise<string> => {
+  const apiKey = (process.env.API_KEY as string) || (import.meta.env?.GEMINI_API_KEY as string) || (import.meta.env?.VITE_GEMINI_API_KEY as string);
+
+  if (!apiKey) {
+    throw new Error("Gemini API 키가 설정되지 않았습니다.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  const performanceLabel = {
+    'VIRAL': '바이럴 (상위 10%)',
+    'EXCELLENT': '우수 (상위 10-30%)',
+    'GOOD': '양호 (상위 30-60%)',
+    'AVERAGE': '평균 (상위 60-80%)',
+    'POOR': '부진 (하위 20%)',
+  }[short.performance] || '알 수 없음';
+
+  const prompt = `
+당신은 대한민국 최고의 YouTube 쇼츠(Shorts) 성장 전략 전문가입니다.
+다음은 분석 대상 쇼츠의 상세 정보입니다.
+
+[쇼츠 정보]
+- 제목: ${short.title}
+- 조회수: ${short.viewCount.toLocaleString()}
+- 좋아요: ${short.likeCount.toLocaleString()}
+- 댓글: ${short.commentCount.toLocaleString()}
+- 재생 시간: ${short.duration}초
+- 참여율: ${(short.engagementRate * 100).toFixed(2)}%
+- 성능 등급: ${performanceLabel}
+- 인기도 점수: ${short.popularityScore.toFixed(2)}
+${short.hookEffectiveness ? `- 훅 효과성: ${short.hookEffectiveness.toFixed(2)}` : ''}
+${short.retentionScore ? `- 예상 시청 유지율: ${(short.retentionScore * 100).toFixed(1)}%` : ''}
+${channelInfo ? `- 채널: ${channelInfo.title} (구독자 ${channelInfo.subscriberCount?.toLocaleString() || 0})` : ''}
+${short.description ? `- 설명:\n${short.description.substring(0, 300)}` : ''}
+
+[업로드 날짜]
+${short.publishedAt ? new Date(short.publishedAt).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' }) : '알 수 없음'}
+
+[요청사항]
+위 데이터를 바탕으로, 이 쇼츠의 성과를 개선하고 더 많은 조회수와 참여를 끌어내기 위한 구체적이고 실행 가능한 개선 방안을 한국어로 제안해주세요.
+
+다음 항목을 마크다운 형식으로 작성해주세요:
+
+### 1. 현재 성과 분석
+- 이 쇼츠의 강점은 무엇인가요? (조회수, 참여율, 재생시간 등 고려)
+- 개선이 필요한 부분은 무엇인가요?
+- 경쟁 쇼츠 대비 어느 정도 수준인가요?
+
+### 2. 제목 최적화
+- 현재 제목의 문제점 또는 개선 가능한 부분
+- 더 많은 클릭을 유도할 수 있는 제목 3가지 제안 (트렌드, 감정 유발, 호기심 자극 등 고려)
+
+### 3. 첫 3초 훅(Hook) 강화
+- 쇼츠는 첫 3초가 가장 중요합니다. 시청자를 사로잡을 수 있는 오프닝 전략을 제안해주세요.
+- 시각적 요소, 자막, 사운드 등을 활용한 구체적인 아이디어
+
+### 4. 참여율 향상 전략
+- 좋아요, 댓글, 공유를 늘리기 위한 CTA(Call-to-Action) 전략
+- 시청자 인터랙션을 유도하는 구체적인 방법 (질문, 챌린지, 투표 등)
+
+### 5. 알고리즘 최적화
+- 해시태그 전략 제안 (인기 해시태그 + 니치 해시태그 조합)
+- 업로드 최적 시간대 제안
+- 시리즈화 또는 후속 쇼츠 제작 아이디어
+
+### 6. 즉시 실행 가능한 액션 플랜
+- 오늘 바로 실행할 수 있는 개선 사항 3가지 (우선순위 순)
+- 각 액션의 기대 효과
+
+응답은 간결하고 실용적으로 작성하되, 구체적인 예시를 포함해주세요.
+`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.0-flash-001',
+      contents: prompt
+    });
+
+    if (!response || !response.text) {
+      throw new Error("AI 개선 제안 생성에 실패했습니다.");
+    }
+
+    return response.text;
+  } catch (error: any) {
+    console.error("Error generating shorts advice:", error);
+    throw new Error(error?.message || "쇼츠 개선 제안 생성 중 오류가 발생했습니다.");
   }
 };

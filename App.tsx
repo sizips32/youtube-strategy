@@ -2,9 +2,20 @@ import React, { useState, useCallback } from 'react';
 import useLocalStorage from './hooks/useLocalStorage';
 import ApiKeyModal from './components/ApiKeyModal';
 import AnalysisChart from './components/AnalysisChart';
-import { AnalysisResult, AnalysisType, RegionFilter, VideoData, VideoTypeFilter, ChannelAnalysisView } from './types';
+import ShortsManagement from './components/ShortsManagement';
+import {
+  AnalysisResult,
+  AnalysisType,
+  RegionFilter,
+  VideoData,
+  VideoTypeFilter,
+  ChannelAnalysisView,
+  ShortsData,
+  ShortsAnalysisResult,
+  ShortsSummary
+} from './types';
 import * as youtubeService from './services/youtubeService';
-import { generateStrategy, generateVideoSummary } from './services/geminiService';
+import { generateStrategy, generateVideoSummary, generateShortsAdvice } from './services/geminiService';
 // Using react-markdown for better display of AI strategy
 import ReactMarkdown from 'react-markdown';
 
@@ -59,6 +70,10 @@ const App: React.FC = () => {
     const [videoSummary, setVideoSummary] = useState<string>('');
     const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
 
+    // 쇼츠 관리 관련 state
+    const [shortsAnalysis, setShortsAnalysis] = useState<ShortsAnalysisResult | null>(null);
+    const [shortsAiAdvice, setShortsAiAdvice] = useState<{ [videoId: string]: string }>({});
+
     const handleSearch = useCallback(async () => {
         if (!apiKey) {
             const errorMsg = envYoutubeApiKey 
@@ -71,8 +86,9 @@ const App: React.FC = () => {
             return;
         }
         if (!query) {
-            const errorMsg = 
+            const errorMsg =
                 analysisType === AnalysisType.CHANNEL ? '채널명을 입력해주세요.' :
+                analysisType === AnalysisType.SHORTS_MANAGEMENT ? '채널명을 입력해주세요.' :
                 analysisType === AnalysisType.RISING_STAR ? '키워드를 입력해주세요.' :
                 analysisType === AnalysisType.BLUE_OCEAN ? '키워드/해시태그를 입력해주세요.' :
                 '키워드를 입력해주세요.';
@@ -84,6 +100,8 @@ const App: React.FC = () => {
         setError(null);
         setAnalysisResult(null);
         setAiStrategy('');
+        setShortsAnalysis(null);
+        setShortsAiAdvice({});
 
         try {
             const lang = regionFilter === RegionFilter.KOREA ? 'ko' : 'en';
@@ -144,8 +162,38 @@ const App: React.FC = () => {
                 videoItems = await youtubeService.searchKeywordVideos(apiKey, query, lang);
                 const videoIds = videoItems.map((item: any) => item.id.videoId).filter(id => id);
                 let videoDetails = await youtubeService.getVideoDetails(apiKey, videoIds);
-                
+
                 displayVideos = videoDetails.slice(0, 50); // 빈집 토픽 분석은 더 많은 데이터 필요
+            } else if (analysisType === AnalysisType.SHORTS_MANAGEMENT) { // 쇼츠 관리
+                channelInfo = await youtubeService.searchChannel(apiKey, query);
+                if (!channelInfo) throw new Error('채널을 찾을 수 없습니다.');
+
+                videoItems = await youtubeService.getChannelVideos(apiKey, channelInfo.id, lang);
+                const videoIds = videoItems.map((item: any) => item.id.videoId).filter(id => id);
+                const videoDetails = await youtubeService.getVideoDetails(apiKey, videoIds);
+
+                // 쇼츠 성능 분석
+                const shortsData = youtubeService.analyzeShortsPerformance(
+                    videoDetails,
+                    channelInfo.subscriberCount
+                );
+
+                if (shortsData.length === 0) {
+                    throw new Error('이 채널에는 쇼츠 영상이 없습니다. (60초 이하 영상)');
+                }
+
+                const summary = youtubeService.generateShortsSummary(shortsData);
+
+                setShortsAnalysis({
+                    channelInfo,
+                    videos: shortsData,
+                    summary,
+                });
+
+                // 쇼츠 관리는 별도 처리하므로 일반 분석 결과는 설정하지 않음
+                setAnalysisResult(null);
+                setIsLoading(false);
+                return;
             }
             
             const result: AnalysisResult = { channelInfo, videos: displayVideos };
@@ -200,7 +248,7 @@ const App: React.FC = () => {
 
     const handleDownloadCSV = useCallback(() => {
         if (!analysisResult || analysisResult.videos.length === 0) return;
-        
+
         const headers = ['제목', '조회수', '좋아요', '댓글', '영상길이(초)', '인기도점수', '업로드일', '링크'];
         const rows = analysisResult.videos.map(v => [
             `"${v.title.replace(/"/g, '""')}"`,
@@ -212,12 +260,12 @@ const App: React.FC = () => {
             v.publishedAt || '',
             `https://www.youtube.com/watch?v=${v.id}`
         ]);
-        
+
         const csvContent = [
             headers.join(','),
             ...rows.map(row => row.join(','))
         ].join('\n');
-        
+
         const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
@@ -228,6 +276,30 @@ const App: React.FC = () => {
         link.click();
         document.body.removeChild(link);
     }, [analysisResult]);
+
+    // 쇼츠 AI 개선 제안 핸들러
+    const handleGenerateShortsAdvice = useCallback(async (videoId: string) => {
+        if (!shortsAnalysis) return;
+
+        const short = shortsAnalysis.videos.find(s => s.id === videoId);
+        if (!short) return;
+
+        // 이미 생성 중이거나 생성된 경우 스킵
+        if (shortsAiAdvice[videoId]) return;
+
+        // 로딩 상태 표시
+        setShortsAiAdvice(prev => ({ ...prev, [videoId]: '생성 중...' }));
+
+        try {
+            const advice = await generateShortsAdvice(short, shortsAnalysis.channelInfo);
+            setShortsAiAdvice(prev => ({ ...prev, [videoId]: advice }));
+        } catch (error: any) {
+            setShortsAiAdvice(prev => ({
+                ...prev,
+                [videoId]: `⚠️ 개선 제안 생성 중 오류가 발생했습니다: ${error.message}`
+            }));
+        }
+    }, [shortsAnalysis, shortsAiAdvice]);
 
     const renderResultList = (videos: VideoData[]) => (
         <div className="mt-6 space-y-4">
@@ -309,6 +381,7 @@ const App: React.FC = () => {
                                 setError(null);
                                 setAiStrategy('');
                                 setChannelView(ChannelAnalysisView.TOP);
+                                setShortsAnalysis(null);
                             }}
                             className={`px-4 py-2 text-lg font-semibold transition-colors whitespace-nowrap ${analysisType === AnalysisType.CHANNEL ? 'border-b-2 border-blue-500 text-white' : 'text-gray-400 hover:text-white'}`}
                         >
@@ -321,6 +394,7 @@ const App: React.FC = () => {
                                 setAnalysisResult(null);
                                 setError(null);
                                 setAiStrategy('');
+                                setShortsAnalysis(null);
                             }}
                             className={`px-4 py-2 text-lg font-semibold transition-colors whitespace-nowrap ${analysisType === AnalysisType.KEYWORD ? 'border-b-2 border-blue-500 text-white' : 'text-gray-400 hover:text-white'}`}
                         >
@@ -333,6 +407,7 @@ const App: React.FC = () => {
                                 setAnalysisResult(null);
                                 setError(null);
                                 setAiStrategy('');
+                                setShortsAnalysis(null);
                             }}
                             className={`px-4 py-2 text-lg font-semibold transition-colors whitespace-nowrap ${analysisType === AnalysisType.RISING_STAR ? 'border-b-2 border-blue-500 text-white' : 'text-gray-400 hover:text-white'}`}
                         >
@@ -345,10 +420,24 @@ const App: React.FC = () => {
                                 setAnalysisResult(null);
                                 setError(null);
                                 setAiStrategy('');
+                                setShortsAnalysis(null);
                             }}
                             className={`px-4 py-2 text-lg font-semibold transition-colors whitespace-nowrap ${analysisType === AnalysisType.BLUE_OCEAN ? 'border-b-2 border-blue-500 text-white' : 'text-gray-400 hover:text-white'}`}
                         >
                             빈집 토픽 분석
+                        </button>
+                        <button
+                            onClick={() => {
+                                setAnalysisType(AnalysisType.SHORTS_MANAGEMENT);
+                                setQuery('');
+                                setAnalysisResult(null);
+                                setError(null);
+                                setAiStrategy('');
+                                setShortsAnalysis(null);
+                            }}
+                            className={`px-4 py-2 text-lg font-semibold transition-colors whitespace-nowrap ${analysisType === AnalysisType.SHORTS_MANAGEMENT ? 'border-b-2 border-blue-500 text-white' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            쇼츠 관리
                         </button>
                     </div>
 
@@ -368,8 +457,9 @@ const App: React.FC = () => {
                         {/* Search Input */}
                         <div className="md:col-span-2">
                              <label className="block text-sm font-medium text-gray-300 mb-1">
-                                {analysisType === AnalysisType.CHANNEL ? '채널명' : 
-                                 analysisType === AnalysisType.RISING_STAR ? '키워드/주제' : 
+                                {analysisType === AnalysisType.CHANNEL ? '채널명' :
+                                 analysisType === AnalysisType.SHORTS_MANAGEMENT ? '채널명' :
+                                 analysisType === AnalysisType.RISING_STAR ? '키워드/주제' :
                                  analysisType === AnalysisType.BLUE_OCEAN ? '키워드/해시태그' : '키워드'}
                              </label>
                             <div className="flex">
@@ -379,6 +469,7 @@ const App: React.FC = () => {
                                     onChange={(e) => setQuery(e.target.value)}
                                     placeholder={
                                         analysisType === AnalysisType.CHANNEL ? '분석할 채널명을 입력하세요 (예: 침착맨)' :
+                                        analysisType === AnalysisType.SHORTS_MANAGEMENT ? '쇼츠를 분석할 채널명을 입력하세요' :
                                         analysisType === AnalysisType.RISING_STAR ? '최근 급성장 채널을 찾을 키워드를 입력하세요 (예: 브이로그)' :
                                         analysisType === AnalysisType.BLUE_OCEAN ? '시장 분석할 키워드/해시태그를 입력하세요' :
                                         '분석할 키워드를 입력하세요 (예: 캠핑 브이로그)'
@@ -421,7 +512,21 @@ const App: React.FC = () => {
 
                 {/* Results Section */}
                 {isLoading && <div className="text-center py-20 text-xl">데이터를 분석하고 있습니다...</div>}
-                
+
+                {/* 쇼츠 관리 결과 */}
+                {shortsAnalysis && (
+                    <div className="mt-8">
+                        <ShortsManagement
+                            channelInfo={shortsAnalysis.channelInfo}
+                            shorts={shortsAnalysis.videos}
+                            summary={shortsAnalysis.summary}
+                            isLoading={isLoading}
+                            onGenerateAIAdvice={handleGenerateShortsAdvice}
+                            aiAdvice={shortsAiAdvice}
+                        />
+                    </div>
+                )}
+
                 {analysisResult && (
                     <div className="mt-8">
                         <div className="flex items-center justify-between mb-4 flex-wrap gap-4">

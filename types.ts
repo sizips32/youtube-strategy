@@ -33,6 +33,7 @@ export enum AnalysisType {
   KEYWORD = 'KEYWORD',
   RISING_STAR = 'RISING_STAR', // 라이징 스타 찾기
   BLUE_OCEAN = 'BLUE_OCEAN', // 빈집 토픽 분석
+  SHORTS_MANAGEMENT = 'SHORTS_MANAGEMENT', // 쇼츠 관리
 }
 
 export enum ChannelAnalysisView {
@@ -49,4 +50,48 @@ export enum VideoTypeFilter {
   ALL = 'ALL',
   SHORTS = 'SHORTS', // under 3 mins
   LONG = 'LONG',   // over 3 mins
+}
+
+// Shorts 관리 관련 타입
+export enum ShortsPerformance {
+  VIRAL = 'VIRAL',       // 바이럴 (상위 10%)
+  EXCELLENT = 'EXCELLENT', // 우수 (상위 10-30%)
+  GOOD = 'GOOD',         // 양호 (상위 30-60%)
+  AVERAGE = 'AVERAGE',   // 평균 (상위 60-80%)
+  POOR = 'POOR',         // 부진 (하위 20%)
+}
+
+export interface ShortsData extends VideoData {
+  performance: ShortsPerformance;
+  engagementRate: number; // (likes + comments) / views
+  retentionScore?: number; // 예상 시청 유지율 (조회수/구독자 비율로 추정)
+  hookEffectiveness?: number; // 첫 3초 효과성 (조회수 대비 인게이지먼트)
+}
+
+export interface ShortsAnalysisResult {
+  channelInfo: ChannelInfo | null;
+  videos: ShortsData[];
+  summary: ShortsSummary;
+}
+
+export interface ShortsSummary {
+  totalShorts: number;
+  avgViews: number;
+  avgEngagement: number;
+  viralCount: number;
+  poorCount: number;
+  bestPerformer: ShortsData | null;
+  worstPerformer: ShortsData | null;
+  recommendations: string[];
+}
+
+export interface ShortsEditSuggestion {
+  videoId: string;
+  title: string;
+  suggestions: {
+    type: 'title' | 'thumbnail' | 'description' | 'hashtags' | 'timing';
+    current: string;
+    suggested: string;
+    reason: string;
+  }[];
 }

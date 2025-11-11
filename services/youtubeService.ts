@@ -1,4 +1,4 @@
-import { ChannelInfo, VideoData } from '../types';
+import { ChannelInfo, VideoData, ShortsData, ShortsPerformance, ShortsSummary } from '../types';
 
 const API_BASE_URL = 'https://www.googleapis.com/youtube/v3';
 
@@ -233,4 +233,167 @@ export const findRisingStarChannels = async (apiKey: string, keyword: string, la
             return scoreB - scoreA;
         })
         .slice(0, 10); // 상위 10개만 반환
+};
+
+// 쇼츠 성능 분석
+export const analyzeShortsPerformance = (
+  videos: VideoData[],
+  subscriberCount?: number
+): ShortsData[] => {
+  // 쇼츠만 필터링 (60초 이하)
+  const shorts = videos.filter(v => v.duration > 0 && v.duration <= 60);
+
+  if (shorts.length === 0) return [];
+
+  // 참여율 계산 및 ShortsData로 변환
+  const shortsWithEngagement = shorts.map(video => {
+    const engagementRate = video.viewCount > 0
+      ? (video.likeCount + video.commentCount) / video.viewCount
+      : 0;
+
+    // 시청 유지율 추정 (구독자 대비 조회수)
+    const retentionScore = subscriberCount && subscriberCount > 0
+      ? Math.min(video.viewCount / subscriberCount, 1)
+      : undefined;
+
+    // 훅 효과성 (조회수 대비 인게이지먼트 - 높을수록 첫 3초가 효과적)
+    const hookEffectiveness = video.viewCount > 0
+      ? ((video.likeCount + video.commentCount * 2) / video.viewCount) * 100
+      : 0;
+
+    return {
+      ...video,
+      engagementRate,
+      retentionScore,
+      hookEffectiveness,
+      performance: ShortsPerformance.AVERAGE, // 임시, 나중에 계산
+    };
+  });
+
+  // 참여율 기준으로 정렬하여 백분위수 계산
+  const sortedByEngagement = [...shortsWithEngagement].sort(
+    (a, b) => b.engagementRate - a.engagementRate
+  );
+
+  // 성능 등급 부여
+  return shortsWithEngagement.map(short => {
+    const rank = sortedByEngagement.findIndex(s => s.id === short.id);
+    const percentile = (rank / sortedByEngagement.length) * 100;
+
+    let performance: ShortsPerformance;
+    if (percentile < 10) {
+      performance = ShortsPerformance.VIRAL;
+    } else if (percentile < 30) {
+      performance = ShortsPerformance.EXCELLENT;
+    } else if (percentile < 60) {
+      performance = ShortsPerformance.GOOD;
+    } else if (percentile < 80) {
+      performance = ShortsPerformance.AVERAGE;
+    } else {
+      performance = ShortsPerformance.POOR;
+    }
+
+    return {
+      ...short,
+      performance,
+    };
+  });
+};
+
+// 쇼츠 요약 정보 생성
+export const generateShortsSummary = (shorts: ShortsData[]): ShortsSummary => {
+  if (shorts.length === 0) {
+    return {
+      totalShorts: 0,
+      avgViews: 0,
+      avgEngagement: 0,
+      viralCount: 0,
+      poorCount: 0,
+      bestPerformer: null,
+      worstPerformer: null,
+      recommendations: ['채널에 쇼츠가 없습니다. 쇼츠를 업로드하여 시청자와 소통해보세요!'],
+    };
+  }
+
+  const totalViews = shorts.reduce((sum, s) => sum + s.viewCount, 0);
+  const totalEngagement = shorts.reduce((sum, s) => sum + s.engagementRate, 0);
+  const avgViews = totalViews / shorts.length;
+  const avgEngagement = totalEngagement / shorts.length;
+
+  const viralCount = shorts.filter(s => s.performance === ShortsPerformance.VIRAL).length;
+  const excellentCount = shorts.filter(s => s.performance === ShortsPerformance.EXCELLENT).length;
+  const poorCount = shorts.filter(s => s.performance === ShortsPerformance.POOR).length;
+
+  const sortedByViews = [...shorts].sort((a, b) => b.viewCount - a.viewCount);
+  const bestPerformer = sortedByViews[0];
+  const worstPerformer = sortedByViews[sortedByViews.length - 1];
+
+  // AI 추천사항 생성
+  const recommendations: string[] = [];
+
+  // 바이럴률 분석
+  const viralRate = (viralCount / shorts.length) * 100;
+  if (viralRate < 5) {
+    recommendations.push(
+      '바이럴 쇼츠 비율이 낮습니다. 더 강력한 훅(처음 3초)과 트렌디한 주제를 시도해보세요.'
+    );
+  } else if (viralRate > 15) {
+    recommendations.push(
+      `훌륭합니다! ${viralRate.toFixed(1)}%의 쇼츠가 바이럴되고 있습니다. 성공 패턴을 분석하여 반복하세요.`
+    );
+  }
+
+  // 참여율 분석
+  if (avgEngagement < 0.01) {
+    recommendations.push(
+      '평균 참여율이 1% 미만입니다. CTA(Call-to-Action)를 강화하고 댓글 유도 질문을 추가하세요.'
+    );
+  } else if (avgEngagement > 0.05) {
+    recommendations.push(
+      `참여율이 ${(avgEngagement * 100).toFixed(2)}%로 우수합니다! 시청자와의 소통을 계속 유지하세요.`
+    );
+  }
+
+  // 부진한 쇼츠 비율
+  const poorRate = (poorCount / shorts.length) * 100;
+  if (poorRate > 30) {
+    recommendations.push(
+      `${poorRate.toFixed(1)}%의 쇼츠 성과가 부진합니다. 썸네일, 제목, 첫 3초를 개선해보세요.`
+    );
+  }
+
+  // 업로드 빈도 분석
+  if (shorts.length < 10) {
+    recommendations.push(
+      '쇼츠 수가 적습니다. 주 3-5회 꾸준한 업로드로 알고리즘 노출을 늘리세요.'
+    );
+  }
+
+  // 성공 쇼츠 패턴 분석
+  const topShorts = shorts
+    .filter(s => s.performance === ShortsPerformance.VIRAL || s.performance === ShortsPerformance.EXCELLENT)
+    .slice(0, 5);
+
+  if (topShorts.length > 0) {
+    const avgTopDuration = topShorts.reduce((sum, s) => sum + s.duration, 0) / topShorts.length;
+    recommendations.push(
+      `성공한 쇼츠의 평균 길이는 ${avgTopDuration.toFixed(0)}초입니다. 이 길이를 참고하세요.`
+    );
+  }
+
+  // 기본 추천사항
+  if (recommendations.length === 0) {
+    recommendations.push('쇼츠 성과가 안정적입니다. 다양한 포맷과 주제를 실험해보세요.');
+  }
+
+  return {
+    totalShorts: shorts.length,
+    avgViews: Math.round(avgViews),
+    avgEngagement,
+    viralCount,
+    poorCount,
+    bestPerformer,
+    worstPerformer,
+    recommendations,
+  };
 };
