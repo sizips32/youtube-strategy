@@ -5,6 +5,7 @@ import {
   ShortsPerformance,
   ChannelInfo,
 } from '../types';
+import { formatNumber, formatDate } from '../utils';
 
 interface ShortsManagementProps {
   channelInfo: ChannelInfo | null;
@@ -89,20 +90,6 @@ const ShortsManagement: React.FC<ShortsManagementProps> = ({
       case ShortsPerformance.POOR:
         return '부진';
     }
-  };
-
-  // 숫자 포맷팅
-  const formatNumber = (num: number) => {
-    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-    if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
-    return num.toString();
-  };
-
-  // 날짜 포맷팅
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return '-';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric' });
   };
 
   if (isLoading) {

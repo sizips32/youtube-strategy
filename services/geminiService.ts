@@ -1,5 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
-import { AnalysisResult, ChannelAnalysisView, VideoData, ShortsData } from '../types';
+import { AnalysisResult, ChannelAnalysisView, VideoData, ShortsData, ChannelInfo } from '../types';
+import { GEMINI_CONFIG, API_ERROR_MESSAGES } from '../constants';
+import { extractErrorMessage } from '../utils';
 
 const getTopVideosPrompt = (analysisResult: AnalysisResult, query: string) => `
 당신은 대한민국 최고의 유튜브 채널 성장 전략 컨설턴트입니다.
@@ -158,22 +160,20 @@ ${JSON.stringify(videos.map(v => ({
 };
 
 export const generateStrategy = async (
-  analysisResult: AnalysisResult, 
-  query: string, 
-  type: string, 
+  analysisResult: AnalysisResult,
+  query: string,
+  type: string,
   channelView?: ChannelAnalysisView | null
 ): Promise<string> => {
   // Vite 환경변수 접근: vite.config.ts의 define으로 설정된 process.env.API_KEY 또는 import.meta.env 사용
-  const apiKey = (process.env.API_KEY as string) || (import.meta.env?.GEMINI_API_KEY as string) || (import.meta.env?.VITE_GEMINI_API_KEY as string);
-  
+  const apiKey = (process.env.API_KEY as string) || (import.meta.env.GEMINI_API_KEY as string) || (import.meta.env.VITE_GEMINI_API_KEY as string);
+
   if (!apiKey) {
-    const errorMsg = "Gemini API 키가 설정되지 않았습니다. .env.local 파일에 GEMINI_API_KEY를 설정해주세요.";
-    console.error(errorMsg);
-    throw new Error(errorMsg);
+    throw new Error(API_ERROR_MESSAGES.GEMINI_INVALID_KEY);
   }
-  
+
   const ai = new GoogleGenAI({ apiKey });
-  
+
   let prompt = '';
   if (type === 'CHANNEL') {
     if (channelView === ChannelAnalysisView.TOP) {
@@ -198,9 +198,9 @@ export const generateStrategy = async (
   try {
     console.log('Generating strategy with Gemini API...');
     console.log('API Key present:', !!apiKey, 'API Key length:', apiKey?.length || 0);
-    
+
     const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash-001', // 공식 문서에 명시된 모델명 사용
+        model: GEMINI_CONFIG.DEFAULT_MODEL, // 상수 사용
         contents: prompt
     });
     
@@ -211,13 +211,13 @@ export const generateStrategy = async (
     });
     
     if (!response) {
-      throw new Error("Gemini API로부터 응답을 받지 못했습니다.");
+      throw new Error(API_ERROR_MESSAGES.GEMINI_GENERATION_FAILED);
     }
-    
+
     if (!response.text) {
-      throw new Error("Gemini API 응답에 텍스트 데이터가 없습니다.");
+      throw new Error(API_ERROR_MESSAGES.GEMINI_NO_RESPONSE);
     }
-    
+
     return response.text;
   } catch (error: any) {
     console.error("Error generating strategy with Gemini:", error);
@@ -352,7 +352,7 @@ ${video.description ? `- 설명: ${video.description.substring(0, 500)}` : ''}
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash-001',
+      model: GEMINI_CONFIG.DEFAULT_MODEL,
       contents: prompt
     });
     
@@ -442,7 +442,7 @@ ${short.publishedAt ? new Date(short.publishedAt).toLocaleDateString('ko-KR', { 
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash-001',
+      model: GEMINI_CONFIG.DEFAULT_MODEL,
       contents: prompt
     });
 

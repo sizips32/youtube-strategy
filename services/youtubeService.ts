@@ -1,15 +1,21 @@
 import { ChannelInfo, VideoData, ShortsData, ShortsPerformance, ShortsSummary } from '../types';
+import {
+  YOUTUBE_API_CONFIG,
+  API_ERROR_MESSAGES,
+  VIDEO_QUERY_LIMITS,
+  VIDEO_DURATION_LIMITS,
+  RISING_STAR_CRITERIA,
+  calculatePopularityScore,
+} from '../constants';
+import {
+  parseDuration,
+  parseChannelUrl as parseChannelUrlUtil,
+  uniqueBy,
+  chunkArray,
+  extractErrorMessage,
+} from '../utils';
 
-const API_BASE_URL = 'https://www.googleapis.com/youtube/v3';
-
-const parseDuration = (duration: string): number => {
-    const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
-    if (!match) return 0;
-    const hours = (parseInt(match[1]) || 0);
-    const minutes = (parseInt(match[2]) || 0);
-    const seconds = (parseInt(match[3]) || 0);
-    return hours * 3600 + minutes * 60 + seconds;
-};
+const API_BASE_URL = YOUTUBE_API_CONFIG.BASE_URL;
 
 
 export const testApiKey = async (apiKey: string): Promise<{ success: boolean; message?: string }> => {
@@ -60,8 +66,87 @@ export const testApiKey = async (apiKey: string): Promise<{ success: boolean; me
   }
 };
 
+/**
+ * 유튜브 채널 URL에서 채널 ID, 커스텀 URL, 또는 핸들을 추출합니다.
+ * @param urlOrName 채널 URL 또는 채널명
+ * @returns { channelId: string | null, searchQuery: string | null }
+ *          - channelId: URL에서 직접 추출한 채널 ID (있으면)
+ *          - searchQuery: 검색에 사용할 쿼리 (채널명, 커스텀 URL, 핸들)
+ */
+export const parseChannelUrl = (urlOrName: string): { channelId: string | null; searchQuery: string | null } => {
+    // URL 형식이 아닌 경우 (일반 채널명)
+    if (!urlOrName.includes('youtube.com') && !urlOrName.includes('youtu.be')) {
+        return { channelId: null, searchQuery: urlOrName };
+    }
+
+    try {
+        const url = new URL(urlOrName.startsWith('http') ? urlOrName : `https://${urlOrName}`);
+
+        // 채널 ID 형식: /channel/UCxxxxx
+        const channelIdMatch = url.pathname.match(/^\/channel\/([^\/]+)/);
+        if (channelIdMatch) {
+            return { channelId: channelIdMatch[1], searchQuery: null };
+        }
+
+        // 커스텀 URL 형식: /c/ChannelName 또는 /user/ChannelName
+        const customUrlMatch = url.pathname.match(/^\/(?:c|user)\/([^\/]+)/);
+        if (customUrlMatch) {
+            return { channelId: null, searchQuery: customUrlMatch[1] };
+        }
+
+        // 핸들 형식: /@ChannelHandle
+        const handleMatch = url.pathname.match(/^\/@([^\/]+)/);
+        if (handleMatch) {
+            return { channelId: null, searchQuery: `@${handleMatch[1]}` };
+        }
+
+        // URL이지만 형식을 인식하지 못한 경우, 전체 URL을 검색 쿼리로 사용
+        return { channelId: null, searchQuery: urlOrName };
+    } catch (e) {
+        // URL 파싱 실패 시 원본을 검색 쿼리로 사용
+        return { channelId: null, searchQuery: urlOrName };
+    }
+};
+
+/**
+ * 채널 ID로 직접 채널 정보를 가져옵니다.
+ */
+export const getChannelById = async (apiKey: string, channelId: string): Promise<ChannelInfo | null> => {
+    const url = `${API_BASE_URL}/channels?part=snippet,statistics&id=${channelId}&key=${apiKey}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error.message || 'Failed to fetch channel by ID.');
+    }
+    const data = await response.json();
+    if (!data.items || data.items.length === 0) return null;
+
+    const item = data.items[0];
+    const stats = item.statistics || {};
+    
+    return {
+        id: channelId,
+        title: item.snippet.title,
+        thumbnail: item.snippet.thumbnails.default.url,
+        subscriberCount: parseInt(stats.subscriberCount || '0', 10),
+        totalViewCount: parseInt(stats.viewCount || '0', 10),
+        videoCount: parseInt(stats.videoCount || '0', 10),
+        publishedAt: item.snippet.publishedAt,
+    };
+};
+
 export const searchChannel = async (apiKey: string, channelName: string): Promise<ChannelInfo | null> => {
-    const url = `${API_BASE_URL}/search?part=snippet&q=${encodeURIComponent(channelName)}&type=channel&maxResults=1&key=${apiKey}`;
+    // URL인지 확인하고 파싱
+    const { channelId, searchQuery } = parseChannelUrl(channelName);
+    
+    // 채널 ID가 직접 추출된 경우
+    if (channelId) {
+        return await getChannelById(apiKey, channelId);
+    }
+    
+    // 검색 쿼리가 있는 경우 (커스텀 URL, 핸들, 또는 일반 채널명)
+    const searchTerm = searchQuery || channelName;
+    const url = `${API_BASE_URL}/search?part=snippet&q=${encodeURIComponent(searchTerm)}&type=channel&maxResults=1&key=${apiKey}`;
     const response = await fetch(url);
     if (!response.ok) {
         const errorData = await response.json();
@@ -71,17 +156,17 @@ export const searchChannel = async (apiKey: string, channelName: string): Promis
     if (data.items.length === 0) return null;
 
     const channel = data.items[0];
-    const channelId = channel.id.channelId;
+    const foundChannelId = channel.id.channelId;
     
     // 채널 통계 정보 가져오기
-    const statsUrl = `${API_BASE_URL}/channels?part=snippet,statistics&id=${channelId}&key=${apiKey}`;
+    const statsUrl = `${API_BASE_URL}/channels?part=snippet,statistics&id=${foundChannelId}&key=${apiKey}`;
     const statsResponse = await fetch(statsUrl);
     if (statsResponse.ok) {
         const statsData = await statsResponse.json();
         if (statsData.items && statsData.items.length > 0) {
             const stats = statsData.items[0];
             return {
-                id: channelId,
+                id: foundChannelId,
                 title: channel.snippet.title,
                 thumbnail: channel.snippet.thumbnails.default.url,
                 subscriberCount: parseInt(stats.statistics?.subscriberCount || '0', 10),
@@ -93,29 +178,29 @@ export const searchChannel = async (apiKey: string, channelName: string): Promis
     }
     
     return {
-        id: channelId,
+        id: foundChannelId,
         title: channel.snippet.title,
         thumbnail: channel.snippet.thumbnails.default.url,
     };
 };
 
 export const getChannelVideos = async (apiKey: string, channelId: string, lang: string): Promise<any[]> => {
-    const url = `${API_BASE_URL}/search?part=snippet&channelId=${channelId}&order=date&maxResults=50&type=video&relevanceLanguage=${lang}&key=${apiKey}`;
+    const url = `${API_BASE_URL}/search?part=snippet&channelId=${channelId}&order=date&maxResults=${VIDEO_QUERY_LIMITS.CHANNEL_VIDEOS_MAX}&type=video&relevanceLanguage=${lang}&key=${apiKey}`;
     const response = await fetch(url);
     if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error.message || 'Failed to fetch channel videos.');
+        throw new Error(errorData.error.message || API_ERROR_MESSAGES.YOUTUBE_FETCH_FAILED);
     }
     const data = await response.json();
     return data.items;
 };
 
 export const searchKeywordVideos = async (apiKey: string, keyword: string, lang: string): Promise<any[]> => {
-    const url = `${API_BASE_URL}/search?part=snippet&q=${encodeURIComponent(keyword)}&order=relevance&maxResults=50&type=video&relevanceLanguage=${lang}&key=${apiKey}`;
+    const url = `${API_BASE_URL}/search?part=snippet&q=${encodeURIComponent(keyword)}&order=relevance&maxResults=${VIDEO_QUERY_LIMITS.KEYWORD_SEARCH_MAX}&type=video&relevanceLanguage=${lang}&key=${apiKey}`;
     const response = await fetch(url);
     if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error.message || 'Failed to search for keyword videos.');
+        throw new Error(errorData.error.message || API_ERROR_MESSAGES.YOUTUBE_FETCH_FAILED);
     }
     const data = await response.json();
     return data.items;
@@ -127,7 +212,7 @@ export const getVideoDetails = async (apiKey: string, videoIds: string[]): Promi
     const response = await fetch(url);
     if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error.message || 'Failed to fetch video details.');
+        throw new Error(errorData.error.message || API_ERROR_MESSAGES.YOUTUBE_FETCH_FAILED);
     }
     const data = await response.json();
 
@@ -135,9 +220,9 @@ export const getVideoDetails = async (apiKey: string, videoIds: string[]): Promi
         const viewCount = parseInt(item.statistics.viewCount || '0', 10);
         const likeCount = parseInt(item.statistics.likeCount || '0', 10);
         const commentCount = parseInt(item.statistics.commentCount || '0', 10);
-        
-        // Popularity score calculation (weighted)
-        const score = viewCount > 0 ? ((likeCount * 0.6 + commentCount * 0.4) / viewCount) * 1000 : 0;
+
+        // 상수 파일의 인기도 점수 계산 함수 사용
+        const score = calculatePopularityScore(viewCount, likeCount, commentCount);
 
         return {
             id: item.id,
@@ -162,18 +247,18 @@ export const findRisingStarChannels = async (apiKey: string, keyword: string, la
     const publishedAfter = new Date();
     publishedAfter.setDate(publishedAfter.getDate() - 30);
     const publishedAfterISO = publishedAfter.toISOString();
-    
-    const url = `${API_BASE_URL}/search?part=snippet&q=${encodeURIComponent(keyword)}&order=viewCount&type=video&publishedAfter=${publishedAfterISO}&maxResults=50&relevanceLanguage=${lang}&key=${apiKey}`;
+
+    const url = `${API_BASE_URL}/search?part=snippet&q=${encodeURIComponent(keyword)}&order=viewCount&type=video&publishedAfter=${publishedAfterISO}&maxResults=${VIDEO_QUERY_LIMITS.KEYWORD_SEARCH_MAX}&relevanceLanguage=${lang}&key=${apiKey}`;
     const response = await fetch(url);
     if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error.message || 'Failed to find rising star channels.');
+        throw new Error(errorData.error.message || API_ERROR_MESSAGES.YOUTUBE_FETCH_FAILED);
     }
     const data = await response.json();
-    
+
     // 채널 ID 중복 제거 및 통계 수집
     const channelMap = new Map<string, { channelId: string; videoCount: number; thumbnail: string; title: string }>();
-    
+
     for (const item of data.items) {
         const channelId = item.snippet.channelId;
         const existing = channelMap.get(channelId);
@@ -188,14 +273,15 @@ export const findRisingStarChannels = async (apiKey: string, keyword: string, la
             });
         }
     }
-    
+
     // 각 채널의 통계 정보 가져오기
     const channelIds = Array.from(channelMap.keys());
     const channelsInfo: ChannelInfo[] = [];
-    
-    // 채널 통계 API 호출 (50개씩 배치)
-    for (let i = 0; i < channelIds.length; i += 50) {
-        const batch = channelIds.slice(i, i + 50);
+
+    // 채널 통계 API 호출 (배치 처리)
+    const batches = chunkArray(channelIds, VIDEO_QUERY_LIMITS.BATCH_SIZE);
+
+    for (const batch of batches) {
         const statsUrl = `${API_BASE_URL}/channels?part=snippet,statistics&id=${batch.join(',')}&key=${apiKey}`;
         const statsResponse = await fetch(statsUrl);
         if (statsResponse.ok) {
@@ -206,9 +292,13 @@ export const findRisingStarChannels = async (apiKey: string, keyword: string, la
                     const subscriberCount = parseInt(channel.statistics?.subscriberCount || '0', 10);
                     const videoCount = parseInt(channel.statistics?.videoCount || '0', 10);
                     const totalViewCount = parseInt(channel.statistics?.viewCount || '0', 10);
-                    
-                    // 구독자 수가 적당하고(1000~100000), 영상 수가 적당한 채널 우선 (라이징 스타 특성)
-                    if (subscriberCount >= 1000 && subscriberCount < 100000 && videoCount >= 5) {
+
+                    // 라이징 스타 기준 적용 (상수 사용)
+                    if (
+                        subscriberCount >= RISING_STAR_CRITERIA.MIN_SUBSCRIBERS &&
+                        subscriberCount < RISING_STAR_CRITERIA.MAX_SUBSCRIBERS &&
+                        videoCount >= RISING_STAR_CRITERIA.MIN_VIDEO_COUNT
+                    ) {
                         channelsInfo.push({
                             id: channel.id,
                             title: channelData.title,
@@ -223,7 +313,7 @@ export const findRisingStarChannels = async (apiKey: string, keyword: string, la
             }
         }
     }
-    
+
     // 구독자 수 기준 정렬 (적은 구독자지만 최근 활발한 채널 우선)
     return channelsInfo
         .sort((a, b) => {
@@ -232,7 +322,7 @@ export const findRisingStarChannels = async (apiKey: string, keyword: string, la
             const scoreB = (b.videoCount || 0) / Math.max(b.subscriberCount || 1, 1);
             return scoreB - scoreA;
         })
-        .slice(0, 10); // 상위 10개만 반환
+        .slice(0, VIDEO_QUERY_LIMITS.DEFAULT_MAX_RESULTS);
 };
 
 // 쇼츠 성능 분석
@@ -240,8 +330,8 @@ export const analyzeShortsPerformance = (
   videos: VideoData[],
   subscriberCount?: number
 ): ShortsData[] => {
-  // 쇼츠만 필터링 (60초 이하)
-  const shorts = videos.filter(v => v.duration > 0 && v.duration <= 60);
+  // 쇼츠만 필터링 (상수 사용)
+  const shorts = videos.filter(v => v.duration > 0 && v.duration <= VIDEO_DURATION_LIMITS.SHORTS_MAX_SECONDS);
 
   if (shorts.length === 0) return [];
 

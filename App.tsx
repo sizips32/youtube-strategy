@@ -16,6 +16,8 @@ import {
 } from './types';
 import * as youtubeService from './services/youtubeService';
 import { generateStrategy, generateVideoSummary, generateShortsAdvice } from './services/geminiService';
+import { filterByVideoType } from './utils';
+import { VIDEO_DURATION_LIMITS, CSV_CONFIG } from './constants';
 // Using react-markdown for better display of AI strategy
 import ReactMarkdown from 'react-markdown';
 
@@ -87,8 +89,8 @@ const App: React.FC = () => {
         }
         if (!query) {
             const errorMsg =
-                analysisType === AnalysisType.CHANNEL ? '채널명을 입력해주세요.' :
-                analysisType === AnalysisType.SHORTS_MANAGEMENT ? '채널명을 입력해주세요.' :
+                analysisType === AnalysisType.CHANNEL ? '채널명 또는 URL을 입력해주세요.' :
+                analysisType === AnalysisType.SHORTS_MANAGEMENT ? '채널명 또는 URL을 입력해주세요.' :
                 analysisType === AnalysisType.RISING_STAR ? '키워드를 입력해주세요.' :
                 analysisType === AnalysisType.BLUE_OCEAN ? '키워드/해시태그를 입력해주세요.' :
                 '키워드를 입력해주세요.';
@@ -114,14 +116,10 @@ const App: React.FC = () => {
                 if (!channelInfo) throw new Error('채널을 찾을 수 없습니다.');
                 videoItems = await youtubeService.getChannelVideos(apiKey, channelInfo.id, lang);
                 
-                const videoIds = videoItems.map((item: any) => item.id.videoId).filter(id => id);
+                const videoIds = videoItems.map((item: any) => item.id.videoId).filter((id: string) => id);
                 let videoDetails = await youtubeService.getVideoDetails(apiKey, videoIds);
-                 // Apply video type filter first
-                if(videoTypeFilter === VideoTypeFilter.SHORTS) {
-                    videoDetails = videoDetails.filter(v => v.duration > 0 && v.duration < 180);
-                } else if (videoTypeFilter === VideoTypeFilter.LONG) {
-                    videoDetails = videoDetails.filter(v => v.duration >= 180);
-                }
+                // Apply video type filter using utils
+                videoDetails = filterByVideoType(videoDetails, videoTypeFilter, VIDEO_DURATION_LIMITS.SHORTS_EXTENDED_MAX_SECONDS);
 
                 if (videoDetails.length > 0) {
                     const sortedVideos = [...videoDetails].sort((a, b) => a.popularityScore - b.popularityScore);
@@ -134,15 +132,11 @@ const App: React.FC = () => {
 
             } else if (analysisType === AnalysisType.KEYWORD) { // KEYWORD analysis
                 videoItems = await youtubeService.searchKeywordVideos(apiKey, query, lang);
-                const videoIds = videoItems.map((item: any) => item.id.videoId).filter(id => id);
+                const videoIds = videoItems.map((item: any) => item.id.videoId).filter((id: string) => id);
                 let videoDetails = await youtubeService.getVideoDetails(apiKey, videoIds);
-                
-                // Apply video type filter
-                if(videoTypeFilter === VideoTypeFilter.SHORTS) {
-                    videoDetails = videoDetails.filter(v => v.duration > 0 && v.duration < 180);
-                } else if (videoTypeFilter === VideoTypeFilter.LONG) {
-                    videoDetails = videoDetails.filter(v => v.duration >= 180);
-                }
+
+                // Apply video type filter using utils
+                videoDetails = filterByVideoType(videoDetails, videoTypeFilter, VIDEO_DURATION_LIMITS.SHORTS_EXTENDED_MAX_SECONDS);
                 displayVideos = videoDetails.slice(0, 10); // Show top 10 for keyword search for now
             } else if (analysisType === AnalysisType.RISING_STAR) { // 라이징 스타 찾기
                 const risingChannels = await youtubeService.findRisingStarChannels(apiKey, query, lang);
@@ -266,11 +260,11 @@ const App: React.FC = () => {
             ...rows.map(row => row.join(','))
         ].join('\n');
 
-        const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const blob = new Blob([CSV_CONFIG.BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
         link.setAttribute('href', url);
-        link.setAttribute('download', `${analysisResult.channelInfo?.title || 'analysis'}_${new Date().toISOString().split('T')[0]}.csv`);
+        link.setAttribute('download', `${CSV_CONFIG.FILENAME_PREFIX}_${analysisResult.channelInfo?.title || 'analysis'}_${new Date().toISOString().split('T')[0]}${CSV_CONFIG.FILE_EXTENSION}`);
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
         link.click();
@@ -457,8 +451,8 @@ const App: React.FC = () => {
                         {/* Search Input */}
                         <div className="md:col-span-2">
                              <label className="block text-sm font-medium text-gray-300 mb-1">
-                                {analysisType === AnalysisType.CHANNEL ? '채널명' :
-                                 analysisType === AnalysisType.SHORTS_MANAGEMENT ? '채널명' :
+                                {analysisType === AnalysisType.CHANNEL ? '채널명 또는 URL' :
+                                 analysisType === AnalysisType.SHORTS_MANAGEMENT ? '채널명 또는 URL' :
                                  analysisType === AnalysisType.RISING_STAR ? '키워드/주제' :
                                  analysisType === AnalysisType.BLUE_OCEAN ? '키워드/해시태그' : '키워드'}
                              </label>
@@ -468,8 +462,8 @@ const App: React.FC = () => {
                                     value={query}
                                     onChange={(e) => setQuery(e.target.value)}
                                     placeholder={
-                                        analysisType === AnalysisType.CHANNEL ? '분석할 채널명을 입력하세요 (예: 침착맨)' :
-                                        analysisType === AnalysisType.SHORTS_MANAGEMENT ? '쇼츠를 분석할 채널명을 입력하세요' :
+                                        analysisType === AnalysisType.CHANNEL ? '채널명 또는 URL 입력 (예: 침착맨 또는 https://youtube.com/@침착맨)' :
+                                        analysisType === AnalysisType.SHORTS_MANAGEMENT ? '채널명 또는 URL 입력 (예: 침착맨 또는 https://youtube.com/@침착맨)' :
                                         analysisType === AnalysisType.RISING_STAR ? '최근 급성장 채널을 찾을 키워드를 입력하세요 (예: 브이로그)' :
                                         analysisType === AnalysisType.BLUE_OCEAN ? '시장 분석할 키워드/해시태그를 입력하세요' :
                                         '분석할 키워드를 입력하세요 (예: 캠핑 브이로그)'
