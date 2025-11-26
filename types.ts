@@ -34,6 +34,39 @@ export enum AnalysisType {
   RISING_STAR = 'RISING_STAR', // 라이징 스타 찾기
   BLUE_OCEAN = 'BLUE_OCEAN', // 빈집 토픽 분석
   SHORTS_MANAGEMENT = 'SHORTS_MANAGEMENT', // 쇼츠 관리
+  CONTENT_DISCOVERY = 'CONTENT_DISCOVERY', // 소재 발굴
+}
+
+// 소재 발굴 관련 타입
+export interface ContentDiscoveryVideo extends VideoData {
+  channelSubscriberCount: number;
+  subscriberViewRatio: number; // 구독자 대비 조회수 비율
+}
+
+export interface VideoComment {
+  id: string;
+  author: string;
+  text: string;
+  likeCount: number;
+  publishedAt: string;
+}
+
+export interface ContentIdea {
+  id: string;
+  title: string;
+  description: string;
+  reasoning: string; // AI가 추천한 이유
+  estimatedInterest: 'high' | 'medium' | 'low'; // 예상 관심도
+}
+
+export interface ScriptOutline {
+  title: string;
+  estimatedDuration: string; // 예: "10-15분"
+  sections: {
+    title: string;
+    estimatedTime: string; // 예: "2-3분"
+    keyPoints: string[];
+  }[];
 }
 
 export enum ChannelAnalysisView {

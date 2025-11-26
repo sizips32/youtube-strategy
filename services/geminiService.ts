@@ -9,7 +9,7 @@ const getTopVideosPrompt = (analysisResult: AnalysisResult, query: string) => `
 
 [데이터 분석 결과]
 ${JSON.stringify(analysisResult.videos.map(v => ({
-    '제목': v.title, '조회수': v.viewCount, '좋아요': v.likeCount, '댓글수': v.commentCount, '영상길이(초)': v.duration, '인기도 점수': v.popularityScore,
+  '제목': v.title, '조회수': v.viewCount, '좋아요': v.likeCount, '댓글수': v.commentCount, '영상길이(초)': v.duration, '인기도 점수': v.popularityScore,
 })), null, 2)}
 
 [요청]
@@ -42,7 +42,7 @@ const getBottomVideosPrompt = (analysisResult: AnalysisResult, query: string) =>
 
 [데이터 분석 결과]
 ${JSON.stringify(analysisResult.videos.map(v => ({
-    '제목': v.title, '조회수': v.viewCount, '좋아요': v.likeCount, '댓글수': v.commentCount, '영상길이(초)': v.duration, '인기도 점수': v.popularityScore,
+  '제목': v.title, '조회수': v.viewCount, '좋아요': v.likeCount, '댓글수': v.commentCount, '영상길이(초)': v.duration, '인기도 점수': v.popularityScore,
 })), null, 2)}
 
 [요청]
@@ -76,7 +76,7 @@ const getKeywordPrompt = (analysisResult: AnalysisResult, query: string) => `
 
 [데이터 분석 결과]
 ${JSON.stringify(analysisResult.videos.map(v => ({
-    '제목': v.title, '조회수': v.viewCount, '좋아요': v.likeCount, '댓글수': v.commentCount, '영상길이(초)': v.duration, '인기도 점수': v.popularityScore,
+  '제목': v.title, '조회수': v.viewCount, '좋아요': v.likeCount, '댓글수': v.commentCount, '영상길이(초)': v.duration, '인기도 점수': v.popularityScore,
 })), null, 2)}
 
 [요청]
@@ -108,7 +108,7 @@ const getBlueOceanPrompt = (analysisResult: AnalysisResult, query: string) => {
   const viewCounts = videos.map(v => v.viewCount);
   const avgViews = viewCounts.reduce((a, b) => a + b, 0) / viewCounts.length;
   const medianViews = [...viewCounts].sort((a, b) => a - b)[Math.floor(viewCounts.length / 2)];
-  
+
   // 채널 집중도 계산
   const channelMap = new Map<string, number>();
   videos.forEach(v => {
@@ -117,7 +117,7 @@ const getBlueOceanPrompt = (analysisResult: AnalysisResult, query: string) => {
   });
   const uniqueChannels = channelMap.size;
   const channelConcentration = videos.length > 0 ? (uniqueChannels / videos.length) * 100 : 0;
-  
+
   return `
 당신은 대한민국 최고의 유튜브 시장 분석 및 블루오션 발굴 전문가입니다.
 다음은 키워드/해시태그 '${query}'에 대한 상위 인기 영상 데이터 분석 결과입니다.
@@ -126,7 +126,7 @@ const getBlueOceanPrompt = (analysisResult: AnalysisResult, query: string) => {
 총 ${videos.length}개 영상 분석:
 ${JSON.stringify(videos.map(v => ({
     '제목': v.title, '조회수': v.viewCount, '좋아요': v.likeCount, '댓글수': v.commentCount, '영상길이(초)': v.duration, '인기도 점수': v.popularityScore,
-})), null, 2)}
+  })), null, 2)}
 
 [시장 지표]
 - 평균 조회수: ${avgViews.toLocaleString()}
@@ -200,16 +200,16 @@ export const generateStrategy = async (
     console.log('API Key present:', !!apiKey, 'API Key length:', apiKey?.length || 0);
 
     const response = await ai.models.generateContent({
-        model: GEMINI_CONFIG.DEFAULT_MODEL, // 상수 사용
-        contents: prompt
+      model: GEMINI_CONFIG.DEFAULT_MODEL, // 상수 사용
+      contents: prompt
     });
-    
+
     console.log('Gemini API response received:', {
       hasResponse: !!response,
       hasText: !!response?.text,
       textLength: response?.text?.length || 0
     });
-    
+
     if (!response) {
       throw new Error(API_ERROR_MESSAGES.GEMINI_GENERATION_FAILED);
     }
@@ -228,14 +228,14 @@ export const generateStrategy = async (
       code: error?.code,
       stack: error?.stack
     });
-    
+
     // 더 구체적인 에러 메시지 제공
     let errorMessage = "AI 전략 생성 중 오류가 발생했습니다.";
-    
+
     // 403 오류 및 API 비활성화 케이스 처리
     if (error?.status === 403) {
       const errorStr = JSON.stringify(error);
-      
+
       // 프로젝트 ID 추출 시도
       let projectId = '';
       let activationUrl = '';
@@ -262,12 +262,12 @@ export const generateStrategy = async (
       } catch (e) {
         // 파싱 실패 시 무시
       }
-      
+
       if (errorStr.includes('SERVICE_DISABLED') || errorStr.includes('Generative Language API') || errorStr.includes('has not been used') || errorStr.includes('is disabled')) {
-        const projectSpecificUrl = projectId 
+        const projectSpecificUrl = projectId
           ? `https://console.developers.google.com/apis/api/generativelanguage.googleapis.com/overview?project=${projectId}`
           : activationUrl || 'https://console.developers.google.com/apis/api/generativelanguage.googleapis.com/overview';
-        
+
         errorMessage = `⚠️ Generative Language API가 활성화되지 않았습니다.\n\n` +
           `현재 API 키는 프로젝트 ${projectId || '(알 수 없음)'}에 연결되어 있습니다.\n\n` +
           `해결 방법:\n\n` +
@@ -290,7 +290,7 @@ export const generateStrategy = async (
     } else if (error?.message) {
       const errorMsgLower = error.message.toLowerCase();
       const errorStr = JSON.stringify(error).toLowerCase();
-      
+
       if (errorStr.includes('service_disabled') || errorStr.includes('api has not been used')) {
         errorMessage = `⚠️ Generative Language API가 활성화되지 않았습니다.\n\n` +
           `Google Cloud Console에서 Generative Language API를 활성화해주세요:\n` +
@@ -311,7 +311,7 @@ export const generateStrategy = async (
     } else if (error?.status) {
       errorMessage = `API 오류 (상태 코드: ${error.status})`;
     }
-    
+
     throw new Error(errorMessage);
   }
 };
@@ -319,13 +319,13 @@ export const generateStrategy = async (
 // 영상별 AI 요약 생성
 export const generateVideoSummary = async (video: VideoData, channelTitle?: string): Promise<string> => {
   const apiKey = (process.env.API_KEY as string) || (import.meta.env?.GEMINI_API_KEY as string) || (import.meta.env?.VITE_GEMINI_API_KEY as string);
-  
+
   if (!apiKey) {
     throw new Error("Gemini API 키가 설정되지 않았습니다.");
   }
-  
+
   const ai = new GoogleGenAI({ apiKey });
-  
+
   const prompt = `
 당신은 유튜브 콘텐츠 분석 전문가입니다.
 다음 영상 정보를 바탕으로 간결하고 실용적인 요약을 제공해주세요.
@@ -355,11 +355,11 @@ ${video.description ? `- 설명: ${video.description.substring(0, 500)}` : ''}
       model: GEMINI_CONFIG.DEFAULT_MODEL,
       contents: prompt
     });
-    
+
     if (!response || !response.text) {
       throw new Error("AI 요약 생성에 실패했습니다.");
     }
-    
+
     return response.text;
   } catch (error: any) {
     console.error("Error generating video summary:", error);
@@ -454,5 +454,140 @@ ${short.publishedAt ? new Date(short.publishedAt).toLocaleDateString('ko-KR', { 
   } catch (error: any) {
     console.error("Error generating shorts advice:", error);
     throw new Error(error?.message || "쇼츠 개선 제안 생성 중 오류가 발생했습니다.");
+  }
+};
+
+// 댓글 분석하여 콘텐츠 아이디어 추천
+export const analyzeCommentsForIdeas = async (
+  comments: any[],
+  videoTitle: string,
+  videoDescription?: string
+): Promise<string> => {
+  const apiKey = (process.env.API_KEY as string) || (import.meta.env?.GEMINI_API_KEY as string) || (import.meta.env?.VITE_GEMINI_API_KEY as string);
+
+  if (!apiKey) {
+    throw new Error("Gemini API 키가 설정되지 않았습니다.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  // 댓글 텍스트 추출 (상위 50개)
+  const commentTexts = comments
+    .slice(0, 50)
+    .map(c => c.snippet?.topLevelComment?.snippet?.textDisplay || c.snippet?.textDisplay || '')
+    .filter(text => text.length > 0);
+
+  const prompt = `
+당신은 대한민국 최고의 유튜브 콘텐츠 기획 전문가입니다.
+다음은 인기 영상 "${videoTitle}"의 댓글 분석 데이터입니다.
+
+[영상 정보]
+- 제목: ${videoTitle}
+${videoDescription ? `- 설명: ${videoDescription.substring(0, 300)}` : ''}
+
+[수집된 댓글 (${commentTexts.length}개)]
+${commentTexts.slice(0, 30).map((text, idx) => `${idx + 1}. ${text}`).join('\n')}
+
+[요청사항]
+위 댓글들을 분석하여, 시청자들이 가장 관심있어하는 주제와 니즈를 파악하고,
+이를 바탕으로 새로운 콘텐츠 아이디어 3-5개를 제안해주세요.
+
+다음 형식의 JSON 배열로 응답해주세요:
+[
+  {
+    "id": "1",
+    "title": "콘텐츠 제목",
+    "description": "콘텐츠 설명 (2-3문장)",
+    "reasoning": "이 아이디어를 추천하는 이유 (댓글 분석 근거 포함)",
+    "estimatedInterest": "high" | "medium" | "low"
+  }
+]
+
+**중요**: 반드시 유효한 JSON 형식으로만 응답하세요. 다른 텍스트는 포함하지 마세요.
+`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: GEMINI_CONFIG.DEFAULT_MODEL,
+      contents: prompt
+    });
+
+    if (!response || !response.text) {
+      throw new Error("AI 분석 생성에 실패했습니다.");
+    }
+
+    return response.text;
+  } catch (error: any) {
+    console.error("Error analyzing comments:", error);
+    throw new Error(error?.message || "댓글 분석 중 오류가 발생했습니다.");
+  }
+};
+
+// 선택한 소재로 대본 목차 생성
+export const generateScriptOutline = async (
+  idea: any,
+  videoContext?: string
+): Promise<string> => {
+  const apiKey = (process.env.API_KEY as string) || (import.meta.env?.GEMINI_API_KEY as string) || (import.meta.env?.VITE_GEMINI_API_KEY as string);
+
+  if (!apiKey) {
+    throw new Error("Gemini API 키가 설정되지 않았습니다.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  const prompt = `
+당신은 대한민국 최고의 유튜브 대본 작가입니다.
+다음 콘텐츠 아이디어를 바탕으로 실제 촬영에 사용할 수 있는 상세한 대본 목차를 작성해주세요.
+
+[콘텐츠 아이디어]
+- 제목: ${idea.title}
+- 설명: ${idea.description}
+- 추천 이유: ${idea.reasoning}
+${videoContext ? `- 참고 영상: ${videoContext}` : ''}
+
+[요청사항]
+이 아이디어를 바탕으로 10-15분 분량의 유튜브 영상 대본 목차를 작성해주세요.
+각 섹션별로 예상 시간과 핵심 포인트를 포함해주세요.
+
+다음 형식의 JSON으로 응답해주세요:
+{
+  "title": "최종 영상 제목 (클릭을 유도하는 매력적인 제목)",
+  "estimatedDuration": "10-15분",
+  "sections": [
+    {
+      "title": "섹션 제목",
+      "estimatedTime": "2-3분",
+      "keyPoints": [
+        "핵심 포인트 1",
+        "핵심 포인트 2",
+        "핵심 포인트 3"
+      ]
+    }
+  ]
+}
+
+**섹션 구성 가이드**:
+1. 인트로 (30초-1분): 훅, 주제 소개
+2. 본론 1-3개 섹션 (각 2-4분): 핵심 내용
+3. 아웃트로 (1-2분): 요약, CTA
+
+**중요**: 반드시 유효한 JSON 형식으로만 응답하세요. 다른 텍스트는 포함하지 마세요.
+`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: GEMINI_CONFIG.DEFAULT_MODEL,
+      contents: prompt
+    });
+
+    if (!response || !response.text) {
+      throw new Error("대본 목차 생성에 실패했습니다.");
+    }
+
+    return response.text;
+  } catch (error: any) {
+    console.error("Error generating script outline:", error);
+    throw new Error(error?.message || "대본 목차 생성 중 오류가 발생했습니다.");
   }
 };

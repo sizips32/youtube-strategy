@@ -3,19 +3,24 @@ import useLocalStorage from './hooks/useLocalStorage';
 import ApiKeyModal from './components/ApiKeyModal';
 import AnalysisChart from './components/AnalysisChart';
 import ShortsManagement from './components/ShortsManagement';
+import ContentDiscovery from './components/ContentDiscovery';
 import {
-  AnalysisResult,
-  AnalysisType,
-  RegionFilter,
-  VideoData,
-  VideoTypeFilter,
-  ChannelAnalysisView,
-  ShortsData,
-  ShortsAnalysisResult,
-  ShortsSummary
+    AnalysisResult,
+    AnalysisType,
+    RegionFilter,
+    VideoData,
+    VideoTypeFilter,
+    ChannelAnalysisView,
+    ShortsData,
+    ShortsAnalysisResult,
+    ShortsSummary,
+    ContentDiscoveryVideo,
+    VideoComment,
+    ContentIdea,
+    ScriptOutline
 } from './types';
 import * as youtubeService from './services/youtubeService';
-import { generateStrategy, generateVideoSummary, generateShortsAdvice } from './services/geminiService';
+import { generateStrategy, generateVideoSummary, generateShortsAdvice, analyzeCommentsForIdeas, generateScriptOutline } from './services/geminiService';
 import { filterByVideoType } from './utils';
 import { VIDEO_DURATION_LIMITS, CSV_CONFIG } from './constants';
 // Using react-markdown for better display of AI strategy
@@ -42,9 +47,9 @@ const CopyIcon = () => (
 
 const App: React.FC = () => {
     // YouTube API 키: 환경변수 우선, 없으면 로컬스토리지 사용 (하위 호환성)
-    const envYoutubeApiKey = (import.meta.env?.YOUTUBE_API_KEY as string) || 
-                              (import.meta.env?.VITE_YOUTUBE_API_KEY as string) || 
-                              '';
+    const envYoutubeApiKey = (import.meta.env?.YOUTUBE_API_KEY as string) ||
+        (import.meta.env?.VITE_YOUTUBE_API_KEY as string) ||
+        '';
     const [storedApiKey, setStoredApiKey] = useLocalStorage<string>('youtube-api-key', '');
     const apiKey = envYoutubeApiKey || storedApiKey;
     const setApiKey = (key: string) => {
@@ -53,12 +58,12 @@ const App: React.FC = () => {
             setStoredApiKey(key);
         }
     };
-    
+
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [analysisType, setAnalysisType] = useState<AnalysisType>(AnalysisType.CHANNEL);
     const [channelView, setChannelView] = useState<ChannelAnalysisView>(ChannelAnalysisView.TOP);
     const [query, setQuery] = useState('');
-    
+
     const [regionFilter, setRegionFilter] = useState<RegionFilter>(RegionFilter.KOREA);
     const [videoTypeFilter, setVideoTypeFilter] = useState<VideoTypeFilter>(VideoTypeFilter.ALL);
 
@@ -76,9 +81,18 @@ const App: React.FC = () => {
     const [shortsAnalysis, setShortsAnalysis] = useState<ShortsAnalysisResult | null>(null);
     const [shortsAiAdvice, setShortsAiAdvice] = useState<{ [videoId: string]: string }>({});
 
+    // 소재 발굴 관련 state
+    const [contentDiscoveryVideos, setContentDiscoveryVideos] = useState<ContentDiscoveryVideo[]>([]);
+    const [selectedDiscoveryVideo, setSelectedDiscoveryVideo] = useState<ContentDiscoveryVideo | null>(null);
+    const [videoComments, setVideoComments] = useState<VideoComment[]>([]);
+    const [contentIdeas, setContentIdeas] = useState<ContentIdea[]>([]);
+    const [scriptOutline, setScriptOutline] = useState<ScriptOutline | null>(null);
+    const [isGeneratingIdeas, setIsGeneratingIdeas] = useState(false);
+    const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
+
     const handleSearch = useCallback(async () => {
         if (!apiKey) {
-            const errorMsg = envYoutubeApiKey 
+            const errorMsg = envYoutubeApiKey
                 ? 'YouTube API 키가 환경변수에 설정되지 않았습니다. .env.local 파일을 확인하세요.'
                 : 'YouTube API 키를 먼저 설정해주세요.';
             setError(errorMsg);
@@ -90,10 +104,10 @@ const App: React.FC = () => {
         if (!query) {
             const errorMsg =
                 analysisType === AnalysisType.CHANNEL ? '채널명 또는 URL을 입력해주세요.' :
-                analysisType === AnalysisType.SHORTS_MANAGEMENT ? '채널명 또는 URL을 입력해주세요.' :
-                analysisType === AnalysisType.RISING_STAR ? '키워드를 입력해주세요.' :
-                analysisType === AnalysisType.BLUE_OCEAN ? '키워드/해시태그를 입력해주세요.' :
-                '키워드를 입력해주세요.';
+                    analysisType === AnalysisType.SHORTS_MANAGEMENT ? '채널명 또는 URL을 입력해주세요.' :
+                        analysisType === AnalysisType.RISING_STAR ? '키워드를 입력해주세요.' :
+                            analysisType === AnalysisType.BLUE_OCEAN ? '키워드/해시태그를 입력해주세요.' :
+                                '키워드를 입력해주세요.';
             setError(errorMsg);
             return;
         }
@@ -115,7 +129,7 @@ const App: React.FC = () => {
                 channelInfo = await youtubeService.searchChannel(apiKey, query);
                 if (!channelInfo) throw new Error('채널을 찾을 수 없습니다.');
                 videoItems = await youtubeService.getChannelVideos(apiKey, channelInfo.id, lang);
-                
+
                 const videoIds = videoItems.map((item: any) => item.id.videoId).filter((id: string) => id);
                 let videoDetails = await youtubeService.getVideoDetails(apiKey, videoIds);
                 // Apply video type filter using utils
@@ -189,21 +203,21 @@ const App: React.FC = () => {
                 setIsLoading(false);
                 return;
             }
-            
+
             const result: AnalysisResult = { channelInfo, videos: displayVideos };
             setAnalysisResult(result);
 
             if (displayVideos.length > 0) {
-              try {
-                const strategy = await generateStrategy(result, query, analysisType, channelView);
-                setAiStrategy(strategy);
-              } catch (strategyError: any) {
-                // AI 전략 생성 실패 시 에러 메시지를 전략으로 표시하여 사용자에게 알림
-                setAiStrategy(`⚠️ ${strategyError?.message || "AI 전략 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."}`);
-                console.error("AI strategy generation failed:", strategyError);
-              }
+                try {
+                    const strategy = await generateStrategy(result, query, analysisType, channelView);
+                    setAiStrategy(strategy);
+                } catch (strategyError: any) {
+                    // AI 전략 생성 실패 시 에러 메시지를 전략으로 표시하여 사용자에게 알림
+                    setAiStrategy(`⚠️ ${strategyError?.message || "AI 전략 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."}`);
+                    console.error("AI strategy generation failed:", strategyError);
+                }
             } else {
-              setAiStrategy("분석할 영상이 충분하지 않아 전략을 생성할 수 없습니다.");
+                setAiStrategy("분석할 영상이 충분하지 않아 전략을 생성할 수 없습니다.");
             }
 
         } catch (e: any) {
@@ -212,7 +226,7 @@ const App: React.FC = () => {
             setIsLoading(false);
         }
     }, [apiKey, query, analysisType, regionFilter, videoTypeFilter, channelView]);
-    
+
     const handleCopyStrategy = useCallback(() => {
         if (!aiStrategy) return;
         navigator.clipboard.writeText(aiStrategy).then(() => {
@@ -295,13 +309,184 @@ const App: React.FC = () => {
         }
     }, [shortsAnalysis, shortsAiAdvice]);
 
+    // 소재 발굴: 키워드 검색 핸들러
+    const handleContentDiscoverySearch = useCallback(async (keyword: string, minRatio: number) => {
+        if (!apiKey) {
+            setError('YouTube API 키를 먼저 설정해주세요.');
+            return;
+        }
+
+        setIsLoading(true);
+        setError(null);
+        setContentDiscoveryVideos([]);
+        setVideoComments([]);
+        setContentIdeas([]);
+        setScriptOutline(null);
+        setSelectedDiscoveryVideo(null);
+
+        try {
+            const lang = regionFilter === RegionFilter.KOREA ? 'ko' : 'en';
+            const videoItems = await youtubeService.searchVideosWithChannelInfo(apiKey, keyword, lang, 50);
+
+            const videoIds = videoItems.map((item: any) => item.id.videoId).filter((id: string) => id);
+            const videoDetails = await youtubeService.getVideoDetails(apiKey, videoIds);
+
+            // 각 영상의 채널 구독자 수 가져오기
+            const channelIds = [...new Set(videoDetails.map(v => v.channelId).filter(Boolean))];
+            const channelInfoMap = new Map<string, number>();
+
+            // 채널 정보 배치 처리
+            const batches = [];
+            for (let i = 0; i < channelIds.length; i += 50) {
+                batches.push(channelIds.slice(i, i + 50));
+            }
+
+            for (const batch of batches) {
+                const channelsUrl = `https://www.googleapis.com/youtube/v3/channels?part=statistics&id=${batch.join(',')}&key=${apiKey}`;
+                const response = await fetch(channelsUrl);
+                if (response.ok) {
+                    const data = await response.json();
+                    data.items?.forEach((ch: any) => {
+                        channelInfoMap.set(ch.id, parseInt(ch.statistics?.subscriberCount || '0', 10));
+                    });
+                }
+            }
+
+            // ContentDiscoveryVideo 생성 및 필터링
+            const discoveryVideos: ContentDiscoveryVideo[] = videoDetails
+                .map(video => {
+                    const subscriberCount = channelInfoMap.get(video.channelId || '') || 0;
+                    const ratio = youtubeService.calculateSubscriberViewRatio(video.viewCount, subscriberCount);
+                    return {
+                        ...video,
+                        channelSubscriberCount: subscriberCount,
+                        subscriberViewRatio: ratio,
+                    };
+                })
+                .filter(v => v.subscriberViewRatio >= minRatio)
+                .sort((a, b) => b.subscriberViewRatio - a.subscriberViewRatio);
+
+            setContentDiscoveryVideos(discoveryVideos);
+
+            if (discoveryVideos.length === 0) {
+                setError(`구독자 대비 조회수 비율이 ${minRatio}배 이상인 영상을 찾을 수 없습니다. 필터 값을 낮춰보세요.`);
+            }
+        } catch (e: any) {
+            setError(e.message || '소재 발굴 검색 중 오류가 발생했습니다.');
+        } finally {
+            setIsLoading(false);
+        }
+    }, [apiKey, regionFilter]);
+
+    // 소재 발굴: 댓글 수집 핸들러
+    const handleCollectComments = useCallback(async (videoId: string) => {
+        if (!apiKey) return;
+
+        setIsLoading(true);
+        setError(null);
+        setVideoComments([]);
+        setContentIdeas([]);
+        setScriptOutline(null);
+
+        try {
+            const selectedVideo = contentDiscoveryVideos.find(v => v.id === videoId);
+            setSelectedDiscoveryVideo(selectedVideo || null);
+
+            const rawComments = await youtubeService.getVideoComments(apiKey, videoId, 100);
+
+            const comments: VideoComment[] = rawComments.map((item: any) => ({
+                id: item.id,
+                author: item.snippet.topLevelComment.snippet.authorDisplayName,
+                text: item.snippet.topLevelComment.snippet.textDisplay,
+                likeCount: item.snippet.topLevelComment.snippet.likeCount || 0,
+                publishedAt: item.snippet.topLevelComment.snippet.publishedAt,
+            }));
+
+            setVideoComments(comments);
+
+            if (comments.length === 0) {
+                setError('이 영상은 댓글이 비활성화되어 있거나 댓글이 없습니다.');
+            }
+        } catch (e: any) {
+            setError(e.message || '댓글 수집 중 오류가 발생했습니다.');
+        } finally {
+            setIsLoading(false);
+        }
+    }, [apiKey, contentDiscoveryVideos]);
+
+    // 소재 발굴: AI 아이디어 생성 핸들러
+    const handleGenerateIdeas = useCallback(async () => {
+        if (videoComments.length === 0 || !selectedDiscoveryVideo) return;
+
+        setIsGeneratingIdeas(true);
+        setContentIdeas([]);
+        setScriptOutline(null);
+
+        try {
+            const rawComments = videoComments.map(c => ({
+                snippet: {
+                    topLevelComment: {
+                        snippet: {
+                            textDisplay: c.text,
+                        },
+                    },
+                },
+            }));
+
+            const response = await analyzeCommentsForIdeas(
+                rawComments,
+                selectedDiscoveryVideo.title,
+                selectedDiscoveryVideo.description
+            );
+
+            // JSON 파싱 (마크다운 코드 블록 제거)
+            let jsonText = response.trim();
+            if (jsonText.startsWith('```')) {
+                jsonText = jsonText.replace(/^```(?:json)?\n/, '').replace(/\n```$/, '');
+            }
+
+            const ideas: ContentIdea[] = JSON.parse(jsonText);
+            setContentIdeas(ideas);
+        } catch (e: any) {
+            setError(`AI 아이디어 생성 중 오류: ${e.message}`);
+        } finally {
+            setIsGeneratingIdeas(false);
+        }
+    }, [videoComments, selectedDiscoveryVideo]);
+
+    // 소재 발굴: 대본 목차 생성 핸들러
+    const handleGenerateOutline = useCallback(async (idea: ContentIdea) => {
+        setIsGeneratingOutline(true);
+        setScriptOutline(null);
+
+        try {
+            const response = await generateScriptOutline(
+                idea,
+                selectedDiscoveryVideo?.title
+            );
+
+            // JSON 파싱 (마크다운 코드 블록 제거)
+            let jsonText = response.trim();
+            if (jsonText.startsWith('```')) {
+                jsonText = jsonText.replace(/^```(?:json)?\n/, '').replace(/\n```$/, '');
+            }
+
+            const outline: ScriptOutline = JSON.parse(jsonText);
+            setScriptOutline(outline);
+        } catch (e: any) {
+            setError(`대본 목차 생성 중 오류: ${e.message}`);
+        } finally {
+            setIsGeneratingOutline(false);
+        }
+    }, [selectedDiscoveryVideo]);
+
     const renderResultList = (videos: VideoData[]) => (
         <div className="mt-6 space-y-4">
             {videos.map((video, index) => (
                 <div key={video.id} className="bg-gray-800 p-4 rounded-lg border border-gray-700">
                     <div className="flex items-start">
                         <span className="text-lg font-bold text-gray-400 mr-4 w-8 text-center flex-shrink-0">{index + 1}</span>
-                        <img src={video.thumbnail} alt={video.title} className="w-32 h-20 object-cover rounded mr-4 flex-shrink-0"/>
+                        <img src={video.thumbnail} alt={video.title} className="w-32 h-20 object-cover rounded mr-4 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
                             <a href={`https://www.youtube.com/watch?v=${video.id}`} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-white hover:text-blue-400 line-clamp-2 block">{video.title}</a>
                             <div className="flex items-center text-xs text-gray-400 mt-2 space-x-4 flex-wrap gap-2">
@@ -433,10 +618,27 @@ const App: React.FC = () => {
                         >
                             쇼츠 관리
                         </button>
+                        <button
+                            onClick={() => {
+                                setAnalysisType(AnalysisType.CONTENT_DISCOVERY);
+                                setQuery('');
+                                setAnalysisResult(null);
+                                setError(null);
+                                setAiStrategy('');
+                                setShortsAnalysis(null);
+                                setContentDiscoveryVideos([]);
+                                setVideoComments([]);
+                                setContentIdeas([]);
+                                setScriptOutline(null);
+                            }}
+                            className={`px-4 py-2 text-lg font-semibold transition-colors whitespace-nowrap ${analysisType === AnalysisType.CONTENT_DISCOVERY ? 'border-b-2 border-blue-500 text-white' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            소재 발굴
+                        </button>
                     </div>
 
                     {analysisType === AnalysisType.CHANNEL && (
-                         <div className="mb-4 flex items-center gap-2 rounded-lg bg-gray-700/50 p-1 w-fit">
+                        <div className="mb-4 flex items-center gap-2 rounded-lg bg-gray-700/50 p-1 w-fit">
                             <button onClick={() => setChannelView(ChannelAnalysisView.TOP)} className={`px-4 py-2 text-sm rounded-md transition-colors ${channelView === ChannelAnalysisView.TOP ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-600'}`}>
                                 인기도 TOP 10
                             </button>
@@ -447,59 +649,64 @@ const App: React.FC = () => {
                     )}
 
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {/* Search Input */}
-                        <div className="md:col-span-2">
-                             <label className="block text-sm font-medium text-gray-300 mb-1">
-                                {analysisType === AnalysisType.CHANNEL ? '채널명 또는 URL' :
-                                 analysisType === AnalysisType.SHORTS_MANAGEMENT ? '채널명 또는 URL' :
-                                 analysisType === AnalysisType.RISING_STAR ? '키워드/주제' :
-                                 analysisType === AnalysisType.BLUE_OCEAN ? '키워드/해시태그' : '키워드'}
-                             </label>
-                            <div className="flex">
-                                <input
-                                    type="text"
-                                    value={query}
-                                    onChange={(e) => setQuery(e.target.value)}
-                                    placeholder={
-                                        analysisType === AnalysisType.CHANNEL ? '채널명 또는 URL 입력 (예: 침착맨 또는 https://youtube.com/@침착맨)' :
-                                        analysisType === AnalysisType.SHORTS_MANAGEMENT ? '채널명 또는 URL 입력 (예: 침착맨 또는 https://youtube.com/@침착맨)' :
-                                        analysisType === AnalysisType.RISING_STAR ? '최근 급성장 채널을 찾을 키워드를 입력하세요 (예: 브이로그)' :
-                                        analysisType === AnalysisType.BLUE_OCEAN ? '시장 분석할 키워드/해시태그를 입력하세요' :
-                                        '분석할 키워드를 입력하세요 (예: 캠핑 브이로그)'
-                                    }
-                                    className="w-full p-3 bg-gray-700 rounded-l-md border-t border-b border-l border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                                />
-                                <button
-                                    onClick={handleSearch}
-                                    disabled={isLoading}
-                                    className="px-3 sm:px-4 md:px-6 py-2 sm:py-3 bg-blue-600 rounded-r-md hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-wait font-bold transition-colors text-xs sm:text-sm md:text-base whitespace-nowrap"
-                                >
-                                    {isLoading ? '분석중...' : '분석 시작'}
-                                </button>
-                            </div>
-                        </div>
+                    {/* 소재 발굴 탭에서는 검색 섹션 숨김 (ContentDiscovery 컴포넌트가 자체 검색 UI 제공) */}
+                    {analysisType !== AnalysisType.CONTENT_DISCOVERY && (
+                        <>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                {/* Search Input */}
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-medium text-gray-300 mb-1">
+                                        {analysisType === AnalysisType.CHANNEL ? '채널명 또는 URL' :
+                                            analysisType === AnalysisType.SHORTS_MANAGEMENT ? '채널명 또는 URL' :
+                                                analysisType === AnalysisType.RISING_STAR ? '키워드/주제' :
+                                                    analysisType === AnalysisType.BLUE_OCEAN ? '키워드/해시태그' : '키워드'}
+                                    </label>
+                                    <div className="flex">
+                                        <input
+                                            type="text"
+                                            value={query}
+                                            onChange={(e) => setQuery(e.target.value)}
+                                            placeholder={
+                                                analysisType === AnalysisType.CHANNEL ? '채널명 또는 URL 입력 (예: 침착맨 또는 https://youtube.com/@침착맨)' :
+                                                    analysisType === AnalysisType.SHORTS_MANAGEMENT ? '채널명 또는 URL 입력 (예: 침착맨 또는 https://youtube.com/@침착맨)' :
+                                                        analysisType === AnalysisType.RISING_STAR ? '최근 급성장 채널을 찾을 키워드를 입력하세요 (예: 브이로그)' :
+                                                            analysisType === AnalysisType.BLUE_OCEAN ? '시장 분석할 키워드/해시태그를 입력하세요' :
+                                                                '분석할 키워드를 입력하세요 (예: 캠핑 브이로그)'
+                                            }
+                                            className="w-full p-3 bg-gray-700 rounded-l-md border-t border-b border-l border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                                        />
+                                        <button
+                                            onClick={handleSearch}
+                                            disabled={isLoading}
+                                            className="px-3 sm:px-4 md:px-6 py-2 sm:py-3 bg-blue-600 rounded-r-md hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-wait font-bold transition-colors text-xs sm:text-sm md:text-base whitespace-nowrap"
+                                        >
+                                            {isLoading ? '분석중...' : '분석 시작'}
+                                        </button>
+                                    </div>
+                                </div>
 
-                        {/* Filters */}
-                        <div className="grid grid-cols-2 gap-4">
-                             <div>
-                                <label className="block text-sm font-medium text-gray-300 mb-1">지역</label>
-                                <select value={regionFilter} onChange={(e) => setRegionFilter(e.target.value as RegionFilter)} className="w-full p-3 bg-gray-700 rounded-md border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                    <option value={RegionFilter.KOREA}>한국</option>
-                                    <option value={RegionFilter.OVERSEAS}>해외</option>
-                                </select>
-                             </div>
-                             <div>
-                                <label className="block text-sm font-medium text-gray-300 mb-1">영상 종류</label>
-                                <select value={videoTypeFilter} onChange={(e) => setVideoTypeFilter(e.target.value as VideoTypeFilter)} className="w-full p-3 bg-gray-700 rounded-md border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                    <option value={VideoTypeFilter.ALL}>전체</option>
-                                    <option value={VideoTypeFilter.SHORTS}>쇼츠 (3분 미만)</option>
-                                    <option value={VideoTypeFilter.LONG}>일반 (3분 이상)</option>
-                                </select>
-                             </div>
-                        </div>
-                    </div>
+                                {/* Filters */}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-300 mb-1">지역</label>
+                                        <select value={regionFilter} onChange={(e) => setRegionFilter(e.target.value as RegionFilter)} className="w-full p-3 bg-gray-700 rounded-md border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                            <option value={RegionFilter.KOREA}>한국</option>
+                                            <option value={RegionFilter.OVERSEAS}>해외</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-300 mb-1">영상 종류</label>
+                                        <select value={videoTypeFilter} onChange={(e) => setVideoTypeFilter(e.target.value as VideoTypeFilter)} className="w-full p-3 bg-gray-700 rounded-md border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                            <option value={VideoTypeFilter.ALL}>전체</option>
+                                            <option value={VideoTypeFilter.SHORTS}>쇼츠 (3분 미만)</option>
+                                            <option value={VideoTypeFilter.LONG}>일반 (3분 이상)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    )}
                 </div>
 
                 {error && <div className="mt-6 p-4 bg-red-900/50 border border-red-700 text-red-300 rounded-lg">{error}</div>}
@@ -521,12 +728,33 @@ const App: React.FC = () => {
                     </div>
                 )}
 
+                {/* 소재 발굴 */}
+                {analysisType === AnalysisType.CONTENT_DISCOVERY && (
+                    <div className="mt-8">
+                        <ContentDiscovery
+                            apiKey={apiKey}
+                            onSearch={handleContentDiscoverySearch}
+                            isLoading={isLoading}
+                            videos={contentDiscoveryVideos}
+                            onCollectComments={handleCollectComments}
+                            comments={videoComments}
+                            selectedVideo={selectedDiscoveryVideo}
+                            onGenerateIdeas={handleGenerateIdeas}
+                            contentIdeas={contentIdeas}
+                            isGeneratingIdeas={isGeneratingIdeas}
+                            onGenerateOutline={handleGenerateOutline}
+                            scriptOutline={scriptOutline}
+                            isGeneratingOutline={isGeneratingOutline}
+                        />
+                    </div>
+                )}
+
                 {analysisResult && (
                     <div className="mt-8">
                         <div className="flex items-center justify-between mb-4 flex-wrap gap-4">
                             {analysisResult.channelInfo ? (
                                 <div className="flex items-center">
-                                    <img src={analysisResult.channelInfo.thumbnail} alt={analysisResult.channelInfo.title} className="w-16 h-16 rounded-full mr-4 border-2 border-gray-600"/>
+                                    <img src={analysisResult.channelInfo.thumbnail} alt={analysisResult.channelInfo.title} className="w-16 h-16 rounded-full mr-4 border-2 border-gray-600" />
                                     <div>
                                         <h2 className="text-3xl font-bold">{analysisResult.channelInfo.title}</h2>
                                         {(analysisResult.channelInfo.subscriberCount || analysisResult.channelInfo.totalViewCount || analysisResult.channelInfo.videoCount) && (
@@ -544,7 +772,7 @@ const App: React.FC = () => {
                                         )}
                                     </div>
                                 </div>
-                            ) : <div/>}
+                            ) : <div />}
                             <div className="flex items-center gap-4">
                                 {analysisResult.videos.length > 0 && (
                                     <button
@@ -600,21 +828,20 @@ const App: React.FC = () => {
                         {renderResultList(analysisResult.videos)}
                     </div>
                 )}
-                
+
                 {aiStrategy && (
                     <div className="mt-8 bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700">
                         <div className="flex justify-between items-center mb-4">
-                             <h2 className="text-2xl font-bold flex items-center text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-500">
+                            <h2 className="text-2xl font-bold flex items-center text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-500">
                                 <SparklesIcon /> AI 기반 성장 전략
                             </h2>
                             <button
                                 onClick={handleCopyStrategy}
-                                className={`px-4 py-2 rounded-md transition-all text-sm font-semibold flex items-center ${
-                                    isCopied 
-                                    ? 'bg-green-600 text-white' 
+                                className={`px-4 py-2 rounded-md transition-all text-sm font-semibold flex items-center ${isCopied
+                                    ? 'bg-green-600 text-white'
                                     : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                                }`}
-                                >
+                                    }`}
+                            >
                                 <CopyIcon />
                                 {isCopied ? '복사 완료!' : '전략 복사'}
                             </button>
